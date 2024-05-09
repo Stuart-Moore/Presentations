@@ -139,19 +139,22 @@ select * from clustered_table where date between '2019-07-18 17:04:01.000' and '
 select * from partitioned_table where date between '2019-12-12 03:14:01.000' and '2020-09-12 03:14:01.000'
 select * from filepartition_table where date between '2019-12-12 03:14:01.000' and '2020-09-12 03:14:01.000'
 
+--whats happening under the hood
+select * from sys.partitions where object_id=object_id('flat_table')
+select * from sys.partitions where object_id=object_id('clustered_table')
+select * from sys.partitions where object_id=object_id('partitioned_table')
+select * from sys.partitions where object_id=object_id('filepartition_table')
+
 --Partition Switching examples
 
 --Create table switch existing partition to
+drop TABLE [dbo].[holding_table];
 CREATE TABLE [dbo].[holding_table](
 	[date] [datetime] PRIMARY KEY,
 	[number] [int] NULL
 ) on [fg_years2017] 
 GO
 
-
-insert into incoming_table (date, number) select dateadd(minute,number, '2017-03-01 00:00:01'), '5' from numbers where number<1000;
-
-select * from incoming_table;
 
 --switch out current partition
 select * from holding_table;
@@ -169,13 +172,14 @@ alter table holding_table switch to filepartition_table partition 4
 select count(1) from filepartition_table where Date between '2017-01-01T00:00:00.000' and '2020-01-01T00:00:00.000'
 
 --Create table to switch in to filepartition_table
-drop table incoming_table
+drop table [dbo].[incoming_table];
 CREATE TABLE [dbo].[incoming_table](
 	[date] [datetime] PRIMARY KEY,
 	[number] [int] NULL,
 	CONSTRAINT incomingdate CHECK (date>='2017-01-01T00:00:00.000' and date<'2020-01-01T00:00:00.000')
 ) on [fg_years2017] 
 GO
+
 
 --create a back up  of the original partition
 drop table holding_table;
@@ -190,15 +194,18 @@ GO
 insert into incoming_table (date, number) select dateadd(second,number, '2017-01-01 00:00:01'), number from numbers where number<31536000;
 
 --take a backup of the incoming data
+select count(1) from holding_table;
 alter table filepartition_table switch partition 4 to holding_table;
-select * from holding_table;
+select count(1) from holding_table;
 --switch in new data
 alter table incoming_table switch to filepartition_table partition 4 ;
 select * from filepartition_table where date between '2017-01-01 00:00:01' and '2017-01-01 00:05:01'
 --oops, wrong data, swap back over
 alter table  filepartition_table switch partition 4 to incoming_table;
 alter table holding_table switch to filepartition_table partition 4 ;
-
+select count(1) from incoming_table;
+select count(1) from holding_table;
+select * from filepartition_table where date between '2017-01-01 00:00:01' and '2017-01-01 00:05:01'
 
 --you can see what is in each partition directly if needed. This is handy if you're not 100% which partition holds what datae
 select min(date), max(date) from filepartition_table where $PARTITION.filePartitionFunc(date)=0  
@@ -221,5 +228,6 @@ FROM dbo.filePartition_Table
 GROUP BY $PARTITION.filePartitionFunc([date])  
 ORDER BY Partition ;  
 GO  
+
 
 
